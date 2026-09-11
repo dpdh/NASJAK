@@ -1,0 +1,464 @@
+import React, { useState, memo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Switch,
+  Modal,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useAppStore } from '../../store/appStore';
+import { Spacing, BorderRadius, FontSize, Shadows, COLOR_SCHEMES, getColors } from '../../constants/theme';
+import type { ColorScheme } from '../../constants/theme';
+import { fetchPrayerTimes, requestNotificationPermission, rescheduleNotifications } from '../../services/prayer';
+
+interface SettingItem {
+  id: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  description?: string;
+  type: 'toggle' | 'value' | 'link' | 'slider';
+  value?: any;
+  onChange?: (val: any) => void;
+  onPress?: () => void;
+  color?: string;
+}
+
+const SettingsGroup = memo(({ title, items, colors }: {
+  title: string;
+  items: SettingItem[];
+  colors: ReturnType<typeof getColors>[keyof ReturnType<typeof getColors>];
+}) => (
+  <View style={[styles.group, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <Text style={[styles.groupTitle, { color: colors.textMuted }]}>{title}</Text>
+    {items.map((item, idx) => (
+      <Pressable
+        key={item.id}
+        onPress={item.onPress}
+        style={({ pressed }) => [
+          styles.settingRow,
+          idx < items.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+          { opacity: pressed && item.onPress ? 0.7 : 1 },
+        ]}
+        disabled={!item.onPress && item.type !== 'toggle' && item.type !== 'slider'}
+      >
+        <View style={styles.settingLeft}>
+          <View style={[styles.iconBox, { backgroundColor: (item.color || colors.primary) + '15' }]}>
+            <Ionicons name={item.icon} size={20} color={item.color || colors.primary} />
+          </View>
+          <View style={styles.settingTextContainer}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>{item.label}</Text>
+            {item.description && (
+              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>{item.description}</Text>
+            )}
+          </View>
+        </View>
+
+        {item.type === 'toggle' && (
+          <Switch
+            value={item.value}
+            onValueChange={item.onChange}
+            trackColor={{ false: colors.textMuted + '30', true: (item.color || colors.primary) + '60' }}
+            thumbColor={item.value ? (item.color || colors.primary) : colors.textMuted}
+          />
+        )}
+        {item.type === 'value' && (
+          <Text style={[styles.settingValue, { color: colors.textSecondary }]}>{item.value}</Text>
+        )}
+        {item.type === 'link' && (
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        )}
+        {item.type === 'slider' && (
+          <View style={styles.sliderContainer}>
+            <Text style={[styles.sliderValue, { color: colors.primary }]}>{item.value}px</Text>
+          </View>
+        )}
+      </Pressable>
+    ))}
+  </View>
+));
+
+function SettingsScreen() {
+  const theme = useAppStore((s) => s.theme);
+  const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const colorScheme = useAppStore((s) => s.colorScheme);
+  const setColorScheme = useAppStore((s) => s.setColorScheme);
+  const quranFontSize = useAppStore((s) => s.quranFontSize);
+  const hadithFontSize = useAppStore((s) => s.hadithFontSize);
+  const setQuranFontSize = useAppStore((s) => s.setQuranFontSize);
+  const setHadithFontSize = useAppStore((s) => s.setHadithFontSize);
+  const notificationSettings = useAppStore((s) => s.notificationSettings);
+  const updateNotificationSettings = useAppStore((s) => s.updateNotificationSettings);
+  const prayerLocation = useAppStore((s) => s.prayerLocation);
+  const colors = getColors(colorScheme)[theme];
+
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showQuranSizeModal, setShowQuranSizeModal] = useState(false);
+  const [showHadithSizeModal, setShowHadithSizeModal] = useState(false);
+
+  const syncNotifications = async (updates: Parameters<typeof updateNotificationSettings>[0]) => {
+    const nextSettings = { ...notificationSettings, ...updates };
+    updateNotificationSettings(updates);
+    if (!nextSettings.adhanEnabled && !nextSettings.motivationalEnabled && !nextSettings.riyadhohEnabled) return;
+    if (!prayerLocation) return;
+    try {
+      const times = await fetchPrayerTimes(prayerLocation);
+      await requestNotificationPermission();
+      await rescheduleNotifications(times, nextSettings);
+    } catch {
+      // The prayer screen will retry scheduling after location or network recovery.
+    }
+  };
+
+  const displaySettings: SettingItem[] = [
+    {
+      id: 'dark-mode',
+      icon: theme === 'dark' ? 'moon' : 'moon-outline',
+      label: 'Mode Gelap',
+      description: theme === 'dark' ? 'Aktif' : 'Nonaktif',
+      type: 'toggle',
+      value: theme === 'dark',
+      onChange: toggleTheme,
+      color: '#FFD700',
+    },
+    {
+      id: 'color-scheme',
+      icon: 'palette-outline',
+      label: 'Tema Warna',
+      description: COLOR_SCHEMES[colorScheme as ColorScheme]?.label || 'Ocean',
+      type: 'link',
+      onPress: () => setShowColorPicker(true),
+      color: colors.primary,
+    },
+  ];
+
+  const readingSettings: SettingItem[] = [
+    {
+      id: 'quran-font',
+      icon: 'book-outline',
+      label: 'Ukuran Huruf Al-Quran',
+      description: `Saat ini ${quranFontSize}px`,
+      type: 'slider',
+      value: quranFontSize,
+      onPress: () => setShowQuranSizeModal(true),
+      color: colors.primary,
+    },
+    {
+      id: 'hadith-font',
+      icon: 'document-text-outline',
+      label: 'Ukuran Huruf Hadis',
+      description: `Saat ini ${hadithFontSize}px`,
+      type: 'slider',
+      value: hadithFontSize,
+      onPress: () => setShowHadithSizeModal(true),
+      color: colors.gold,
+    },
+  ];
+
+  const appSettings: SettingItem[] = [
+    {
+      id: 'notifications',
+      icon: 'notifications-outline',
+      label: 'Notifikasi',
+      description: 'Atur adzan, motivasi, dan Riyadhoh',
+      type: 'link',
+      onPress: () => router.push('/sholat/' as any),
+      color: '#FF6B6B',
+    },
+    {
+      id: 'adhan',
+      icon: 'volume-high-outline',
+      label: 'Notifikasi Adzan',
+      description: notificationSettings.adhanEnabled ? 'Aktif sesuai lokasi Anda' : 'Nonaktif',
+      type: 'toggle',
+      value: notificationSettings.adhanEnabled,
+      onChange: (value) => syncNotifications({ adhanEnabled: value }),
+      color: colors.primary,
+    },
+    {
+      id: 'motivational-reminder',
+      icon: 'bulb-outline',
+      label: 'Motivasi Harian',
+      description: notificationSettings.motivationalEnabled ? 'Setiap hari pukul 07.00' : 'Nonaktif',
+      type: 'toggle',
+      value: notificationSettings.motivationalEnabled,
+      onChange: (value) => syncNotifications({ motivationalEnabled: value }),
+      color: colors.gold,
+    },
+    {
+      id: 'riyadhoh-reminder',
+      icon: 'checkmark-circle-outline',
+      label: 'Riyadhoh Reminder',
+      description: notificationSettings.riyadhohEnabled ? `Setiap hari pukul ${String(notificationSettings.riyadhohHour).padStart(2, '0')}:${String(notificationSettings.riyadhohMinute).padStart(2, '0')}` : 'Nonaktif',
+      type: 'toggle',
+      value: notificationSettings.riyadhohEnabled,
+      onChange: (value) => syncNotifications({ riyadhohEnabled: value }),
+      color: colors.success,
+    },
+    {
+      id: 'language',
+      icon: 'language-outline',
+      label: 'Bahasa',
+      description: 'Indonesia',
+      type: 'value',
+      color: '#2EC4B6',
+    },
+    {
+      id: 'cache',
+      icon: 'trash-outline',
+      label: 'Hapus Cache',
+      description: 'Bersihkan data cache aplikasi',
+      type: 'link',
+      onPress: () => {},
+      color: '#FF8C42',
+    },
+  ];
+
+  const aboutSettings: SettingItem[] = [
+    {
+      id: 'version',
+      icon: 'information-circle-outline',
+      label: 'Versi Aplikasi',
+      description: 'v1.0.0 · Build 1',
+      type: 'value',
+      color: colors.primary,
+    },
+    {
+      id: 'update',
+      icon: 'cloud-download-outline',
+      label: 'Cek Update',
+      description: 'Versi terbaru tersedia',
+      type: 'link',
+      onPress: () => {},
+      color: colors.success,
+    },
+  ];
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </Pressable>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Pengaturan</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      {/* Settings Content */}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Display Settings */}
+        <SettingsGroup title="TAMPILAN" items={displaySettings} colors={colors} />
+
+        {/* Reading Settings */}
+        <SettingsGroup title="BACAAN" items={readingSettings} colors={colors} />
+
+        <SettingsGroup title="SHALAT & LOKASI" items={[{
+          id: 'prayer-dashboard',
+          icon: 'compass-outline',
+          label: 'Waktu Shalat, Kiblat & Masjid',
+          description: prayerLocation?.city || 'Gunakan lokasi perangkat',
+          type: 'link' as const,
+          onPress: () => router.push('/sholat/' as any),
+          color: colors.primary,
+        }]} colors={colors} />
+
+        {/* App Settings */}
+        <SettingsGroup title="APLIKASI" items={appSettings} colors={colors} />
+
+        {/* About */}
+        <SettingsGroup title="TENTANG" items={aboutSettings} colors={colors} />
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* Color Picker Modal */}
+      <Modal visible={showColorPicker} transparent animationType="fade" onRequestClose={() => setShowColorPicker(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowColorPicker(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Pilih Tema Warna</Text>
+            <View style={styles.colorGrid}>
+              {(Object.keys(COLOR_SCHEMES) as ColorScheme[]).map((key) => {
+                const scheme = COLOR_SCHEMES[key];
+                const isActive = colorScheme === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => {
+                      setColorScheme(key);
+                      setShowColorPicker(false);
+                    }}
+                    style={[
+                      styles.colorItem,
+                      isActive && { borderColor: scheme.primary, borderWidth: 3 },
+                    ]}
+                  >
+                    <View style={[styles.colorPreview, { backgroundColor: scheme.primary }]}>
+                      <Ionicons name={scheme.icon as any} size={24} color="#FFF" />
+                    </View>
+                    <Text style={[styles.colorName, { color: isActive ? scheme.primary : colors.textSecondary }]}>
+                      {scheme.label.split(' ')[0]}
+                    </Text>
+                    {isActive && <Ionicons name="checkmark-circle" size={16} color={scheme.primary} style={{ position: 'absolute', top: 0, right: 0 }} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable onPress={() => setShowColorPicker(false)} style={[styles.modalBtn, { backgroundColor: colors.primary }]}>
+              <Text style={styles.modalBtnText}>Selesai</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Quran Font Size Modal */}
+      <Modal visible={showQuranSizeModal} transparent animationType="fade" onRequestClose={() => setShowQuranSizeModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowQuranSizeModal(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Ukuran Huruf Al-Quran</Text>
+            <View style={[styles.sizePreview, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.previewText, { fontSize: quranFontSize, color: colors.text }]}>
+                وَقُرْآنًا فَرَقْنَاهُ لِتَقْرَأَهُ عَلَى النَّاسِ
+              </Text>
+            </View>
+            <View style={styles.sizeControl}>
+              <Pressable onPress={() => setQuranFontSize(quranFontSize - 2)} style={[styles.sizeBtn, { backgroundColor: colors.textMuted + '20' }]}>
+                <Ionicons name="remove" size={22} color={colors.text} />
+              </Pressable>
+              <Text style={[styles.sizeValue, { color: colors.text }]}>{quranFontSize}px</Text>
+              <Pressable onPress={() => setQuranFontSize(quranFontSize + 2)} style={[styles.sizeBtn, { backgroundColor: colors.textMuted + '20' }]}>
+                <Ionicons name="add" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+            <View style={styles.sizeSlider}>
+              {Array.from({ length: 9 }, (_, i) => 12 + i * 2).map((size) => (
+                <Pressable
+                  key={size}
+                  onPress={() => setQuranFontSize(size)}
+                  style={[
+                    styles.sizePreset,
+                    { backgroundColor: quranFontSize === size ? colors.primary : colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.sizePresetText, { color: quranFontSize === size ? '#FFF' : colors.textSecondary, fontSize: size * 0.7 }]}>
+                    {size}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable onPress={() => setShowQuranSizeModal(false)} style={[styles.modalBtn, { backgroundColor: colors.primary }]}>
+              <Text style={styles.modalBtnText}>Selesai</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Hadith Font Size Modal */}
+      <Modal visible={showHadithSizeModal} transparent animationType="fade" onRequestClose={() => setShowHadithSizeModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowHadithSizeModal(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Ukuran Huruf Hadis</Text>
+            <View style={[styles.sizePreview, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.previewText, { fontSize: hadithFontSize, color: colors.text }]}>
+                عن أبي هريرة رضي الله عنه قال: قال رسول الله
+              </Text>
+            </View>
+            <View style={styles.sizeControl}>
+              <Pressable onPress={() => setHadithFontSize(hadithFontSize - 2)} style={[styles.sizeBtn, { backgroundColor: colors.textMuted + '20' }]}>
+                <Ionicons name="remove" size={22} color={colors.text} />
+              </Pressable>
+              <Text style={[styles.sizeValue, { color: colors.text }]}>{hadithFontSize}px</Text>
+              <Pressable onPress={() => setHadithFontSize(hadithFontSize + 2)} style={[styles.sizeBtn, { backgroundColor: colors.textMuted + '20' }]}>
+                <Ionicons name="add" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+            <View style={styles.sizeSlider}>
+              {Array.from({ length: 9 }, (_, i) => 12 + i * 2).map((size) => (
+                <Pressable
+                  key={size}
+                  onPress={() => setHadithFontSize(size)}
+                  style={[
+                    styles.sizePreset,
+                    { backgroundColor: hadithFontSize === size ? colors.gold : colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.sizePresetText, { color: hadithFontSize === size ? '#FFF' : colors.textSecondary, fontSize: size * 0.7 }]}>
+                    {size}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable onPress={() => setShowHadithSizeModal(false)} style={[styles.modalBtn, { backgroundColor: colors.gold }]}>
+              <Text style={styles.modalBtnText}>Selesai</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+export default memo(SettingsScreen);
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+  },
+  headerTitle: { fontSize: FontSize.xl, fontWeight: '700' },
+
+  content: { flex: 1, paddingTop: Spacing.md, paddingHorizontal: Spacing.lg },
+
+  group: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginBottom: Spacing.lg,
+    overflow: 'hidden',
+  },
+  groupTitle: { fontSize: FontSize.xs, fontWeight: '700', paddingHorizontal: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
+  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.md, gap: Spacing.md },
+  settingLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: Spacing.md },
+  iconBox: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  settingTextContainer: { flex: 1 },
+  settingLabel: { fontSize: FontSize.md, fontWeight: '600' },
+  settingDesc: { fontSize: FontSize.sm, marginTop: 2 },
+  settingValue: { fontSize: FontSize.sm, fontWeight: '500' },
+  sliderContainer: { alignItems: 'center', justifyContent: 'center', minWidth: 60 },
+  sliderValue: { fontSize: FontSize.sm, fontWeight: '600' },
+
+  // Modal styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalCard: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.lg, paddingBottom: 40 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CCC', alignSelf: 'center', marginBottom: Spacing.lg },
+  modalTitle: { fontSize: FontSize.lg, fontWeight: '700', textAlign: 'center', marginBottom: Spacing.md },
+  modalBtn: { paddingVertical: 12, borderRadius: BorderRadius.lg, alignItems: 'center', marginTop: Spacing.md },
+  modalBtnText: { color: '#FFF', fontSize: FontSize.md, fontWeight: '700' },
+
+  // Color Grid
+  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginBottom: Spacing.lg },
+  colorItem: { flex: 1, minWidth: '30%', alignItems: 'center', padding: Spacing.sm, borderRadius: BorderRadius.lg, borderWidth: 2, borderColor: 'transparent' },
+  colorPreview: { width: 50, height: 50, borderRadius: BorderRadius.md, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
+  colorName: { fontSize: FontSize.xs, fontWeight: '600' },
+
+  // Size Control
+  sizePreview: { borderRadius: BorderRadius.lg, padding: Spacing.md, marginBottom: Spacing.lg, minHeight: 100, justifyContent: 'center', alignItems: 'center' },
+  previewText: { fontStyle: 'italic', textAlign: 'center', lineHeight: 28 },
+  sizeControl: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.md, marginBottom: Spacing.lg },
+  sizeBtn: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  sizeValue: { fontSize: FontSize.lg, fontWeight: '700', minWidth: 70, textAlign: 'center' },
+  sizeSlider: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.lg },
+  sizePreset: { flex: 1, minWidth: '30%', paddingVertical: Spacing.sm, borderRadius: BorderRadius.md, alignItems: 'center', justifyContent: 'center' },
+  sizePresetText: { fontWeight: '600' },
+});
