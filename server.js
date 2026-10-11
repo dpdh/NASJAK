@@ -96,6 +96,7 @@ const pilotProjectActivityLimit = rateLimit({
   })
 });
 const pool = new Pool({ connectionString: databaseUrl });
+let databaseReady = false;
 pool.on('error', (error) => {
   console.error('[database] koneksi idle mengalami error:', error.message);
 });
@@ -589,7 +590,7 @@ app.get('/script.js', (_request, response) => response.sendFile(path.join(projec
 app.get('/api/health', async (_request, response) => {
   try {
     await pool.query('SELECT 1');
-    response.json({ status: 'ok', database: 'ok' });
+    response.json({ status: 'ok', database: databaseReady ? 'ok' : 'connected-initializing' });
   } catch (error) {
     console.error('[health] database tidak tersedia:', error.message);
     response.status(503).json({ status: 'unavailable', database: 'unavailable' });
@@ -1841,29 +1842,43 @@ app.use((error, _request, response, _next) => {
 });
 
 async function startServer() {
-  if (!databaseUrl) throw new Error('DATABASE_URL belum diatur. Salin .env.example ke .env dan isi koneksi PostgreSQL.');
-  const databaseHost = (() => {
-    try {
-      return new URL(databaseUrl).host;
-    } catch {
-      return '(DATABASE_URL tidak valid)';
-    }
-  })();
-  console.log(`[startup] menguji PostgreSQL di ${databaseHost}`);
   await mkdir(photoDirectory, { recursive: true });
   await mkdir(pilotProjectUploadDirectory, { recursive: true });
   await mkdir(ebookDirectory, { recursive: true });
-  await pool.query('SELECT 1');
-  await ensureMemberPasswordChangeSchema();
-  await ensureOAuthSchema();
-  await ensureCollaborationSchema();
-  await ensureBootstrapAdmin(pool);
   const port = Number(process.env.PORT || 3000);
-  app.listen(port, '0.0.0.0', () => console.log(`[startup] NASUHA Jakarta berjalan di 0.0.0.0:${port}`));
+  app.listen(port, '0.0.0.0', async () => {
+    console.log(`[startup] NASUHA Jakarta berjalan di 0.0.0.0:${port}`);
+    if (!databaseUrl) {
+      console.error('[startup] DATABASE_URL belum diatur; halaman web tersedia, tetapi login/register belum aktif.');
+      return;
+    }
+
+    const databaseHost = (() => {
+      try {
+        return new URL(databaseUrl).host;
+      } catch {
+        return '(DATABASE_URL tidak valid)';
+      }
+    })();
+    console.log(`[startup] menguji PostgreSQL di ${databaseHost}`);
+
+    try {
+      await pool.query('SELECT 1');
+      await ensureMemberPasswordChangeSchema();
+      await ensureOAuthSchema();
+      await ensureCollaborationSchema();
+      await ensureBootstrapAdmin(pool);
+      databaseReady = true;
+      console.log('[startup] PostgreSQL siap; login dan register aktif.');
+    } catch (error) {
+      console.error('[startup] PostgreSQL gagal disiapkan:', error.message);
+      console.error('[startup] Periksa DATABASE_URL, kredensial, firewall, dan pastikan database production adalah PostgreSQL.');
+    }
+  });
 }
 
 startServer().catch(async (error) => {
-  console.error('[startup] server gagal dijalankan:', error.message);
+  console.error('[startup] server gagal menyiapkan file upload:', error.message);
   await pool.end();
   process.exit(1);
 });

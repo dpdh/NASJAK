@@ -1,0 +1,7 @@
+RewriteEngine On
+
+# Serve the admin panel for both /admin and /admin/ on Apache/LiteSpeed.
+RewriteRule ^admin/?$ /admin.html [L]
+
+# Serve the member portal for both /anggota and /anggota/ on Apache/LiteSpeed.
+RewriteRule ^anggota/?$ /member-portal.html [L]
