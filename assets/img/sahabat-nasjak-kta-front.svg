@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 1610" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="0" x2="1060" y2="1610" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2FAFF"/>
+      <stop offset="1" stop-color="#DCEEFF"/>
+    </linearGradient>
+    <linearGradient id="band" x1="0" y1="0" x2="1140" y2="200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#164F9E"/>
+      <stop offset="1" stop-color="#14B9C0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1140" height="1610" rx="42" fill="url(#bg)"/>
+  <path d="M0 0h1140v228H0z" fill="url(#band)"/>
+  <path d="M0 216c230 45 411-34 570-2s328 40 570-5v91H0z" fill="#fff" fill-opacity=".22"/>
+  <g fill="#fff" font-family="Arial,sans-serif">
+    <text x="570" y="100" text-anchor="middle" font-size="48" font-weight="700" letter-spacing="5">SAHABAT NASJAK</text>
+    <text x="570" y="158" text-anchor="middle" font-size="24" font-weight="600" letter-spacing="4" fill-opacity=".82">KARTU TANDA ANGGOTA</text>
+  </g>
+  <circle cx="570" cy="503" r="218" fill="#fff" fill-opacity=".62" stroke="#D4A94D" stroke-width="12"/>
+  <circle cx="570" cy="503" r="196" stroke="#fff" stroke-opacity=".9" stroke-width="3"/>
+  <path d="M92 803h956" stroke="#C6DDF2" stroke-width="3"/>
+  <g fill="#164A87" fill-opacity=".12">
+    <circle cx="117" cy="367" r="7"/><circle cx="165" cy="412" r="5"/><circle cx="1023" cy="381" r="6"/>
+    <circle cx="970" cy="431" r="4"/><circle cx="132" cy="661" r="5"/><circle cx="1008" cy="678" r="7"/>
+  </g>
+  <path d="M0 1462c235-84 405 48 570-5s336-96 570-1v154H0z" fill="url(#band)"/>
+  <path d="M0 1456c235-84 405 48 570-5s336-96 570-1" stroke="#D8B65A" stroke-width="8"/>
+  <g fill="#fff" fill-opacity=".9" font-family="Arial,sans-serif" text-anchor="middle">
+    <text x="570" y="1531" font-size="26" font-weight="700" letter-spacing="4">SAHABAT NASJAK</text>
+    <text x="570" y="1574" font-size="17" letter-spacing="3">BERSAMA MEMBANGUN INDONESIA</text>
+  </g>
+</svg>

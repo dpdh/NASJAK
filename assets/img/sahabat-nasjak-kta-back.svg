@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1138 1600" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1138" y2="1600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B2857"/>
+      <stop offset="1" stop-color="#145FA9"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1138" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24D2D0"/>
+      <stop offset="1" stop-color="#D7B555"/>
+    </linearGradient>
+  </defs>
+  <rect width="1138" height="1600" rx="42" fill="url(#bg)"/>
+  <path d="M0 0h1138v235H0z" fill="#071D45" fill-opacity=".55"/>
+  <g fill="#fff" font-family="Arial,sans-serif" text-anchor="middle">
+    <text x="569" y="105" font-size="48" font-weight="700" letter-spacing="5">SAHABAT NASJAK</text>
+    <text x="569" y="163" font-size="23" font-weight="600" letter-spacing="4" fill-opacity=".76">VERIFIKASI KEANGGOTAAN</text>
+  </g>
+  <path d="M89 269h960" stroke="url(#line)" stroke-width="5"/>
+  <g stroke="#7EC8EE" stroke-opacity=".2" stroke-width="3">
+    <path d="M0 540h1138M0 1010h1138M160 235v1120M978 235v1120"/>
+    <circle cx="158" cy="412" r="84"/><circle cx="978" cy="812" r="115"/><circle cx="884" cy="1260" r="55"/>
+  </g>
+  <g fill="#C6F2F3" fill-opacity=".68">
+    <circle cx="206" cy="324" r="5"/><circle cx="236" cy="355" r="5"/><circle cx="264" cy="391" r="5"/>
+    <circle cx="889" cy="638" r="6"/><circle cx="925" cy="675" r="6"/><circle cx="961" cy="709" r="6"/>
+  </g>
+  <path d="M0 1433c202-67 353 39 569-2s376-54 569 0v169H0z" fill="#071D45" fill-opacity=".5"/>
+  <path d="M0 1433c202-67 353 39 569-2s376-54 569 0" stroke="url(#line)" stroke-width="8"/>
+  <text x="569" y="1530" fill="#fff" fill-opacity=".88" font-family="Arial,sans-serif" font-size="25" font-weight="700" letter-spacing="4" text-anchor="middle">TERHUBUNG • BERKOLABORASI • BERTUMBUH</text>
+</svg>

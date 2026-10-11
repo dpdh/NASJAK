@@ -1,0 +1,7 @@
+node_modules/
+.env
+uploads/
+.venv/
+.history/
+server.log
+/assets/data/FORM_DATABASE_CALON_ANGGOTA_IDTC_CLEANED (1).xlsx
