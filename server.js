@@ -96,6 +96,9 @@ const pilotProjectActivityLimit = rateLimit({
   })
 });
 const pool = new Pool({ connectionString: databaseUrl });
+pool.on('error', (error) => {
+  console.error('[database] koneksi idle mengalami error:', error.message);
+});
 const oauthJwksCache = new Map();
 const OAUTH_PROVIDERS = ['google', 'facebook', 'instagram', 'apple'];
 const OAUTH_CALLBACKS = Object.fromEntries(
@@ -550,7 +553,7 @@ app.use(express.json({ limit: '20kb' }));
 app.use(cookieParser());
 
 app.get('/', (_request, response) => response.sendFile(path.join(projectRoot, 'index.html')));
-app.get('/anggota', (_request, response) => response.sendFile(path.join(projectRoot, 'member-portal.html')));
+app.get(['/anggota', '/anggota/'], (_request, response) => response.sendFile(path.join(projectRoot, 'member-portal.html')));
 app.get('/nasjak.css', (_request, response) => response.sendFile(path.join(projectRoot, 'nasjak.css')));
 app.get('/nasjak.js', (_request, response) => response.sendFile(path.join(projectRoot, 'nasjak.js')));
 app.get('/assets/img/NASJAK_11.png', (_request, response) => response.sendFile(path.join(projectRoot, 'assets', 'img', 'NASJAK_11.png')));
@@ -584,8 +587,13 @@ app.get('/assets/img/id_b_02.png', (_request, response) => response.sendFile(pat
 app.get('/style.css', (_request, response) => response.sendFile(path.join(projectRoot, 'style.css')));
 app.get('/script.js', (_request, response) => response.sendFile(path.join(projectRoot, 'script.js')));
 app.get('/api/health', async (_request, response) => {
-  await pool.query('SELECT 1');
-  response.json({ status: 'ok' });
+  try {
+    await pool.query('SELECT 1');
+    response.json({ status: 'ok', database: 'ok' });
+  } catch (error) {
+    console.error('[health] database tidak tersedia:', error.message);
+    response.status(503).json({ status: 'unavailable', database: 'unavailable' });
+  }
 });
 
 registerAdminRoutes(app, { pool, photoDirectory, projectRoot, upload, ebookUpload, ebookDirectory });
@@ -1834,6 +1842,14 @@ app.use((error, _request, response, _next) => {
 
 async function startServer() {
   if (!databaseUrl) throw new Error('DATABASE_URL belum diatur. Salin .env.example ke .env dan isi koneksi PostgreSQL.');
+  const databaseHost = (() => {
+    try {
+      return new URL(databaseUrl).host;
+    } catch {
+      return '(DATABASE_URL tidak valid)';
+    }
+  })();
+  console.log(`[startup] menguji PostgreSQL di ${databaseHost}`);
   await mkdir(photoDirectory, { recursive: true });
   await mkdir(pilotProjectUploadDirectory, { recursive: true });
   await mkdir(ebookDirectory, { recursive: true });
@@ -1843,11 +1859,11 @@ async function startServer() {
   await ensureCollaborationSchema();
   await ensureBootstrapAdmin(pool);
   const port = Number(process.env.PORT || 3000);
-  app.listen(port, () => console.log(`NASUHA Jakarta berjalan di http://localhost:${port}`));
+  app.listen(port, '0.0.0.0', () => console.log(`[startup] NASUHA Jakarta berjalan di 0.0.0.0:${port}`));
 }
 
 startServer().catch(async (error) => {
-  console.error(error.message);
+  console.error('[startup] server gagal dijalankan:', error.message);
   await pool.end();
   process.exit(1);
 });
