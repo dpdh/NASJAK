@@ -497,6 +497,34 @@
                     </div>
                     <p class="form-message profile-message" id="profile-message" role="status" aria-live="polite"></p>
                   </form>
+                  <section class="profile-password-settings" aria-labelledby="profile-password-title">
+                    <div class="profile-password-copy">
+                      <h3 id="profile-password-title">Ganti kata sandi</h3>
+                      <p>Perbarui kata sandi akun Anda. Setelah berhasil, sesi di perangkat lain akan keluar otomatis.</p>
+                    </div>
+                    <form id="profile-password-form" class="profile-password-form" novalidate>
+                      <div class="field-group">
+                        <label for="profile-current-password">Kata sandi saat ini</label>
+                        <input id="profile-current-password" name="currentPassword" type="password" autocomplete="current-password" required />
+                        <span class="field-error" id="profile-current-password-error"></span>
+                      </div>
+                      <div class="field-group">
+                        <label for="profile-new-password">Kata sandi baru</label>
+                        <input id="profile-new-password" name="newPassword" type="password" minlength="12" maxlength="72" autocomplete="new-password" required />
+                        <span class="profile-help">Gunakan minimal 12 karakter.</span>
+                        <span class="field-error" id="profile-new-password-error"></span>
+                      </div>
+                      <div class="field-group">
+                        <label for="profile-new-password-confirmation">Ulangi kata sandi baru</label>
+                        <input id="profile-new-password-confirmation" name="passwordConfirmation" type="password" minlength="12" maxlength="72" autocomplete="new-password" required />
+                        <span class="field-error" id="profile-new-password-confirmation-error"></span>
+                      </div>
+                      <div class="profile-form-actions">
+                        <button class="submit-button" id="profile-password-save-button" type="submit">Simpan kata sandi</button>
+                      </div>
+                      <p class="form-message profile-message" id="profile-password-message" role="status" aria-live="polite"></p>
+                    </form>
+                  </section>
                   <section class="account-social">
                     <h3>Login dengan akun sosial</h3>
                     <p>Tautkan akun yang Anda miliki untuk memakainya saat masuk berikutnya.</p>
@@ -533,6 +561,6 @@
         <button class="primary-button" id="password-change-submit" type="submit">Simpan kata sandi dan lanjutkan</button>
       </form>
     </dialog>
-    <script src="/script.js"></script>
+    <script src="/script.js?v=ganti-password-1"></script>
   </body>
 </html>

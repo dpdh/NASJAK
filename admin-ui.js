@@ -48,6 +48,7 @@ let currentPage = 1;
 let currentAdminId = '';
 let currentAdminRoles = [];
 let currentUsers = [];
+let ebookCatalog = [];
 let approvedMember = null;
 let deletingMemberId = '';
 
@@ -220,6 +221,21 @@ function makeAction(label, action, userId, className = '') {
   return button;
 }
 
+function makeAccessCheckbox(user, kind, refId, label, checked) {
+  const wrap = document.createElement('label');
+  wrap.className = 'access-check';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = Boolean(checked);
+  input.dataset.kind = kind;
+  input.dataset.refId = refId;
+  input.dataset.userId = user.id;
+  const text = document.createElement('span');
+  text.textContent = label;
+  wrap.append(input, text);
+  return wrap;
+}
+
 function memberNumberLabel(user) {
   return `SN-${String(user.memberNumber).padStart(6, '0')}`;
 }
@@ -358,18 +374,24 @@ function renderUsers(users) {
     statusCell.append(status);
     row.append(statusCell);
 
-    const whitePaperCell = document.createElement('td');
+    const accessCell = document.createElement('td');
+    accessCell.className = 'access-checklist';
     if (user.status !== 'active') {
-      whitePaperCell.textContent = 'Aktifkan anggota dulu';
+      accessCell.textContent = 'Aktifkan anggota dulu';
     } else {
-      whitePaperCell.append(makeAction(
-        user.whitePaperAccess ? 'Cabut akses' : 'Setujui akses',
-        'white-paper',
-        user.id,
-        user.whitePaperAccess ? 'suspend' : 'approve'
-      ));
+      const grantedEbooks = new Set(user.ebookAccess || []);
+      accessCell.append(makeAccessCheckbox(user, 'white-paper', 'white-paper', 'Buku Putih NASUHA', Boolean(user.whitePaperAccess)));
+      for (const ebook of ebookCatalog) {
+        accessCell.append(makeAccessCheckbox(user, 'ebook', ebook.id, ebook.title, grantedEbooks.has(ebook.id)));
+      }
+      if (!ebookCatalog.length) {
+        const hint = document.createElement('span');
+        hint.className = 'access-checklist-hint';
+        hint.textContent = 'Belum ada e-book di CMS.';
+        accessCell.append(hint);
+      }
     }
-    row.append(whitePaperCell);
+    row.append(accessCell);
 
     appendCell(row, new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(new Date(user.createdAt)));
     const actionCell = document.createElement('td');
@@ -397,6 +419,7 @@ async function loadUsers() {
   });
   try {
     const result = await requestJson(`/api/admin/users?${params}`);
+    ebookCatalog = Array.isArray(result.ebooks) ? result.ebooks : [];
     renderUsers(result.users);
     document.querySelector('#count-total').textContent = result.counts.total;
     document.querySelector('#count-pending').textContent = result.counts.pending;
@@ -652,7 +675,7 @@ tableBody.addEventListener('click', async (event) => {
         body: JSON.stringify({ approved })
       });
       await loadUsers();
-      setNotice(dashboardNotice, approved ? 'Akses Buku Putih berhasil disetujui.' : 'Akses Buku Putih berhasil dicabut.');
+      setNotice(dashboardNotice, approved ? 'Akses data berhasil disetujui.' : 'Akses data berhasil dicabut.');
     } catch (error) {
       button.disabled = false;
       setNotice(dashboardNotice, error.message, true);
@@ -685,6 +708,33 @@ tableBody.addEventListener('click', async (event) => {
     await loadUsers();
   } catch (error) {
     button.disabled = false;
+    setNotice(dashboardNotice, error.message, true);
+  }
+});
+
+tableBody.addEventListener('change', async (event) => {
+  const input = event.target.closest('input[type="checkbox"][data-kind]');
+  if (!input) return;
+  const { kind, refId, userId } = input.dataset;
+  const approved = input.checked;
+  input.disabled = true;
+  try {
+    if (kind === 'white-paper') {
+      await requestJson(`/api/admin/users/${userId}/white-paper-access`, {
+        method: 'PATCH',
+        body: JSON.stringify({ approved })
+      });
+    } else {
+      await requestJson(`/api/admin/users/${userId}/ebook-access`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ebookId: refId, approved })
+      });
+    }
+    setNotice(dashboardNotice, approved ? 'Akses data berhasil diberikan.' : 'Akses data berhasil dicabut.');
+    await loadUsers();
+  } catch (error) {
+    input.checked = !approved;
+    input.disabled = false;
     setNotice(dashboardNotice, error.message, true);
   }
 });

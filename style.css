@@ -360,6 +360,11 @@ body.is-authenticated .form-wrap { width: 100%; max-width: none; margin: 0; padd
 .profile-form-actions .submit-button { width: auto; min-width: 185px; min-height: 42px; padding: 0 16px; }
 .profile-cancel-button { min-height: 42px; }
 .profile-message { margin: 7px 0 0; }
+.profile-password-settings { margin: 4px 0 22px; padding: 18px; border: 1px solid rgba(124, 164, 207, .24); border-radius: 14px; background: rgba(245, 250, 255, .72); }
+.profile-password-copy h3 { margin: 0; color: var(--ink); font-family: "Space Grotesk", sans-serif; font-size: 14px; }
+.profile-password-copy > p { margin: 4px 0 14px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.profile-password-form .field-group { margin-bottom: 14px; }
+.profile-password-form .profile-form-actions { margin-top: 4px; }
 .dashboard-view .account-social { margin-top: 16px; }
 .media-intro { display: flex; align-items: center; gap: 15px; padding: 20px; border: 1px solid rgba(255, 255, 255, .92); border-radius: 18px; background: linear-gradient(110deg, rgba(255, 255, 255, .92), rgba(232, 244, 255, .82)); box-shadow: 0 12px 32px rgba(55, 104, 158, .08); }
 .media-intro-icon { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(95, 157, 215, .16); border-radius: 14px; color: #4288c7; background: #eef7ff; font-size: 24px; }

@@ -93,6 +93,11 @@ td { padding: 13px 14px; border-top: 1px solid rgba(124, 164, 207, .2); color: #
 .status-active { color: #236b54; background: #dff4eb; }
 .status-suspended { color: #963d3d; background: #f9e6e3; }
 .table-action { min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; color: #315e8b; background: #fff; cursor: pointer; font: inherit; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.access-checklist { display: grid; gap: 6px; min-width: 190px; }
+.access-check { display: flex; align-items: flex-start; gap: 7px; cursor: pointer; font-size: 12px; line-height: 1.35; color: var(--ink); }
+.access-check input { width: auto; min-width: 0; height: auto; margin: 1px 0 0; flex: 0 0 auto; cursor: pointer; }
+.access-check input:disabled { cursor: progress; opacity: .6; }
+.access-checklist-hint { color: var(--muted); font-size: 11px; font-style: italic; }
 .table-action:hover { background: #eef6ff; }
 .table-action + .table-action { margin-left: 5px; }
 .account-table { min-width: 760px; }

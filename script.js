@@ -1970,6 +1970,64 @@ profileForm.addEventListener('submit', async (event) => {
 
 loadHomepageContent();
 
+const profilePasswordForm = document.querySelector('#profile-password-form');
+const profilePasswordMessage = document.querySelector('#profile-password-message');
+const profilePasswordSaveButton = document.querySelector('#profile-password-save-button');
+
+profilePasswordForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const currentPasswordError = document.querySelector('#profile-current-password-error');
+  const newPasswordError = document.querySelector('#profile-new-password-error');
+  const confirmationError = document.querySelector('#profile-new-password-confirmation-error');
+  currentPasswordError.textContent = '';
+  newPasswordError.textContent = '';
+  confirmationError.textContent = '';
+  profilePasswordMessage.textContent = '';
+  profilePasswordMessage.classList.remove('error');
+
+  const currentPassword = profilePasswordForm.elements.currentPassword.value;
+  const newPassword = profilePasswordForm.elements.newPassword.value;
+  const passwordConfirmation = profilePasswordForm.elements.passwordConfirmation.value;
+  if (!currentPassword) {
+    currentPasswordError.textContent = 'Kata sandi saat ini wajib diisi.';
+    return;
+  }
+  if (newPassword.length < 12 || new TextEncoder().encode(newPassword).length > 72) {
+    newPasswordError.textContent = 'Kata sandi harus minimal 12 karakter dan maksimal 72 byte.';
+    return;
+  }
+  if (newPassword !== passwordConfirmation) {
+    confirmationError.textContent = 'Konfirmasi kata sandi belum sama.';
+    return;
+  }
+
+  profilePasswordSaveButton.disabled = true;
+  profilePasswordSaveButton.textContent = 'Menyimpan...';
+  try {
+    const response = await fetch('/api/auth/profile/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword, passwordConfirmation })
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      if (result.field === 'currentPassword') currentPasswordError.textContent = result.error;
+      else if (result.field === 'newPassword') newPasswordError.textContent = result.error;
+      else if (result.field === 'passwordConfirmation') confirmationError.textContent = result.error;
+      else throw new Error(result.error || 'Kata sandi tidak dapat diperbarui.');
+      return;
+    }
+    profilePasswordForm.reset();
+    profilePasswordMessage.textContent = result.message;
+  } catch (error) {
+    profilePasswordMessage.textContent = error.message || 'Tidak dapat terhubung untuk mengganti kata sandi.';
+    profilePasswordMessage.classList.add('error');
+  } finally {
+    profilePasswordSaveButton.disabled = false;
+    profilePasswordSaveButton.textContent = 'Simpan kata sandi';
+  }
+});
+
 document.querySelectorAll('.password-toggle').forEach((toggle) => {
   toggle.addEventListener('click', () => {
     const input = toggle.closest('.password-field').querySelector('input');

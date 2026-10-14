@@ -95,6 +95,15 @@ const pilotProjectActivityLimit = rateLimit({
     error: 'Terlalu banyak aktivitas project. Coba lagi dalam 15 menit.'
   })
 });
+const passwordChangeLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_request, response) => response.status(429).json({
+    error: 'Terlalu banyak percobaan mengganti kata sandi. Coba lagi dalam 15 menit.'
+  })
+});
 const pool = new Pool({ connectionString: databaseUrl });
 let databaseReady = false;
 pool.on('error', (error) => {
@@ -1586,6 +1595,62 @@ app.post('/api/auth/change-password', requireSameOrigin, async (request, respons
     client.release();
   }
   return response.json({ user: await findAuthenticatedUser(token), message: 'Kata sandi berhasil diperbarui.' });
+});
+
+app.post('/api/auth/profile/password', requireSameOrigin, passwordChangeLimit, async (request, response) => {
+  const token = request.cookies?.[SESSION_COOKIE];
+  if (!token) return response.status(401).json({ error: 'Silakan masuk kembali untuk mengganti kata sandi.' });
+  const user = await findAuthenticatedUser(token);
+  if (!user) return response.status(401).json({ error: 'Sesi masuk tidak valid atau sudah berakhir.' });
+  if (!requirePasswordChangeComplete(user, response)) return;
+
+  const currentPassword = typeof request.body?.currentPassword === 'string' ? request.body.currentPassword : '';
+  const newPassword = typeof request.body?.newPassword === 'string' ? request.body.newPassword : '';
+  const passwordConfirmation = typeof request.body?.passwordConfirmation === 'string'
+    ? request.body.passwordConfirmation
+    : '';
+  if (!currentPassword) {
+    return response.status(400).json({ field: 'currentPassword', error: 'Kata sandi saat ini wajib diisi.' });
+  }
+  if (newPassword.length < 12 || Buffer.byteLength(newPassword, 'utf8') > 72) {
+    return response.status(400).json({ field: 'newPassword', error: 'Kata sandi baru harus minimal 12 karakter dan maksimal 72 byte.' });
+  }
+  if (newPassword !== passwordConfirmation) {
+    return response.status(400).json({ field: 'passwordConfirmation', error: 'Konfirmasi kata sandi belum sama.' });
+  }
+
+  const current = await pool.query('SELECT password_hash FROM users WHERE id = $1', [user.id]);
+  if (!current.rowCount) return response.status(401).json({ error: 'Akun tidak ditemukan.' });
+  if (!(await bcrypt.compare(currentPassword, current.rows[0].password_hash))) {
+    return response.status(400).json({ field: 'currentPassword', error: 'Kata sandi saat ini tidak sesuai.' });
+  }
+  if (await bcrypt.compare(newPassword, current.rows[0].password_hash)) {
+    return response.status(400).json({ field: 'newPassword', error: 'Kata sandi baru harus berbeda dari kata sandi saat ini.' });
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const currentTokenHash = tokenHash(token);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE users SET password_hash = $1, must_change_password = FALSE
+       WHERE id = $2 AND status = 'active'`,
+      [passwordHash, user.id]
+    );
+    await client.query(
+      `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1 AND token_hash <> $2 AND revoked_at IS NULL`,
+      [user.id, currentTokenHash]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  return response.json({ message: 'Kata sandi berhasil diperbarui.' });
 });
 
 app.get('/api/auth/providers', async (request, response) => {

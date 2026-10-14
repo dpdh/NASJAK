@@ -146,21 +146,22 @@ function createEbookReaderGuard(pool) {
     const token = request.cookies?.[SESSION_COOKIE];
     if (!token) return response.status(401).json({ error: 'Sesi anggota tidak ditemukan.' });
     const result = await pool.query(
-      `SELECT u.id, u.full_name, u.email
+      `SELECT u.id, u.full_name, u.email,
+              EXISTS (
+                SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = u.id AND r.code = ANY($2::varchar[])
+              ) AS is_staff
        FROM user_sessions s
        JOIN users u ON u.id = s.user_id
-       JOIN user_roles ur ON ur.user_id = u.id
-       JOIN roles r ON r.id = ur.role_id
        WHERE s.token_hash = $1
          AND s.revoked_at IS NULL
          AND s.expires_at > CURRENT_TIMESTAMP
          AND u.status = 'active'
-         AND r.code = ANY($2::varchar[])
        LIMIT 1`,
       [tokenHash(token), STAFF_ROLES]
     );
     if (!result.rowCount) return response.status(401).json({ error: 'Sesi tidak valid atau akun belum aktif.' });
-    request.ebookReader = result.rows[0];
+    request.ebookReader = { id: result.rows[0].id, isStaff: result.rows[0].is_staff };
     return next();
   };
 }
@@ -215,6 +216,15 @@ async function ensureAdminSchema(pool) {
        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+     )`
+  );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS user_ebook_access (
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       ebook_id UUID NOT NULL REFERENCES ebooks(id) ON DELETE CASCADE,
+       granted_by UUID REFERENCES users(id) ON DELETE SET NULL,
+       granted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       PRIMARY KEY (user_id, ebook_id)
      )`
   );
   for (const [key, value] of Object.entries(DEFAULT_SITE_CONTENT)) {
@@ -404,11 +414,20 @@ export function registerAdminRoutes(app, { pool, photoDirectory, projectRoot, up
     return response.json({ content });
   });
 
-  app.get('/api/auth/ebooks', requireEbookReader, async (_request, response) => {
-    const result = await pool.query(
-      `SELECT id, title, description, original_filename, file_size, created_at
-       FROM ebooks ORDER BY created_at DESC`
-    );
+  app.get('/api/auth/ebooks', requireEbookReader, async (request, response) => {
+    const reader = request.ebookReader;
+    const result = reader.isStaff
+      ? await pool.query(
+          `SELECT id, title, description, original_filename, file_size, created_at
+           FROM ebooks ORDER BY created_at DESC`
+        )
+      : await pool.query(
+          `SELECT e.id, e.title, e.description, e.original_filename, e.file_size, e.created_at
+           FROM ebooks e
+           JOIN user_ebook_access uea ON uea.ebook_id = e.id AND uea.user_id = $1
+           ORDER BY e.created_at DESC`,
+          [reader.id]
+        );
     return response.json({
       ebooks: result.rows.map((ebook) => ({
         id: ebook.id,
@@ -424,10 +443,19 @@ export function registerAdminRoutes(app, { pool, photoDirectory, projectRoot, up
 
   app.get('/api/auth/ebooks/:id/file', requireEbookReader, async (request, response) => {
     if (!UUID_PATTERN.test(request.params.id)) return response.sendStatus(404);
-    const result = await pool.query(
-      'SELECT storage_filename, original_filename FROM ebooks WHERE id = $1 LIMIT 1',
-      [request.params.id]
-    );
+    const reader = request.ebookReader;
+    const result = reader.isStaff
+      ? await pool.query(
+          'SELECT storage_filename, original_filename FROM ebooks WHERE id = $1 LIMIT 1',
+          [request.params.id]
+        )
+      : await pool.query(
+          `SELECT e.storage_filename, e.original_filename
+           FROM ebooks e
+           JOIN user_ebook_access uea ON uea.ebook_id = e.id AND uea.user_id = $1
+           WHERE e.id = $2 LIMIT 1`,
+          [reader.id, request.params.id]
+        );
     if (!result.rowCount) return response.sendStatus(404);
     const ebook = result.rows[0];
     const filename = path.basename(ebook.storage_filename);
@@ -740,17 +768,23 @@ export function registerAdminRoutes(app, { pool, photoDirectory, projectRoot, up
     const requestedPage = Number.parseInt(request.query.page, 10);
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const offset = (page - 1) * PAGE_SIZE;
-    const [usersResult, countResult] = await Promise.all([
+    const results = await Promise.all([
       pool.query(
         `SELECT u.id, u.member_number, u.full_name, u.email, u.organization, u.profession, u.member_photo_path,
           u.status, u.white_paper_access, u.created_at,
-                COALESCE(user_role.role_codes, '') AS role_codes
+                COALESCE(user_role.role_codes, '') AS role_codes,
+                COALESCE(ebook_access.ebook_ids, ARRAY[]::uuid[]) AS ebook_ids
          FROM users u
          LEFT JOIN LATERAL (
            SELECT string_agg(r.code, ', ' ORDER BY r.code) AS role_codes
            FROM user_roles ur JOIN roles r ON r.id = ur.role_id
            WHERE ur.user_id = u.id
          ) user_role ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT array_agg(uea.ebook_id ORDER BY e.created_at DESC) AS ebook_ids
+           FROM user_ebook_access uea JOIN ebooks e ON e.id = uea.ebook_id
+           WHERE uea.user_id = u.id
+         ) ebook_access ON TRUE
          WHERE EXISTS (
            SELECT 1 FROM user_roles member_role JOIN roles member ON member.id = member_role.role_id
            WHERE member_role.user_id = u.id AND member.code = 'member'
@@ -769,6 +803,9 @@ export function registerAdminRoutes(app, { pool, photoDirectory, projectRoot, up
         [status, search, PAGE_SIZE, offset]
       ),
       pool.query(
+        `SELECT id, title FROM ebooks ORDER BY created_at DESC`
+      ),
+      pool.query(
         `SELECT COUNT(*)::int AS total,
                 COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
                 COUNT(*) FILTER (WHERE status = 'active')::int AS active,
@@ -784,6 +821,7 @@ export function registerAdminRoutes(app, { pool, photoDirectory, projectRoot, up
            )`
       )
     ]);
+    const [usersResult, ebooksResult, countResult] = results;
     const counts = countResult.rows[0];
     const filteredCount = await pool.query(
       `SELECT COUNT(*)::int AS total FROM users u
@@ -814,8 +852,10 @@ export function registerAdminRoutes(app, { pool, photoDirectory, projectRoot, up
          whitePaperAccess: user.white_paper_access,
         createdAt: user.created_at,
         roleCodes: user.role_codes.split(', ').filter(Boolean),
+        ebookAccess: user.ebook_ids.map(String),
         hasPhoto: Boolean(user.member_photo_path)
       })),
+      ebooks: ebooksResult.rows.map((ebook) => ({ id: ebook.id, title: ebook.title })),
       counts,
       total: filteredCount.rows[0].total,
       page,
@@ -1045,7 +1085,49 @@ export function registerAdminRoutes(app, { pool, photoDirectory, projectRoot, up
        RETURNING id, full_name, white_paper_access`,
       [approved, request.params.id]
     );
-    if (!result.rowCount) return response.status(404).json({ error: 'Hanya anggota aktif yang dapat diberi akses Buku Putih.' });
+    if (!result.rowCount) return response.status(404).json({ error: 'Hanya anggota aktif yang dapat diberi akses data.' });
     return response.json({ user: result.rows[0], approved: result.rows[0].white_paper_access });
+  });
+
+  app.patch('/api/admin/users/:id/ebook-access', requireSameOrigin, requireAdmin, async (request, response) => {
+    if (!UUID_PATTERN.test(request.params.id)) return response.status(400).json({ error: 'ID pengguna tidak valid.' });
+    const ebookId = typeof request.body?.ebookId === 'string' ? request.body.ebookId : '';
+    if (!UUID_PATTERN.test(ebookId)) return response.status(400).json({ error: 'ID e-book tidak valid.' });
+    const approved = request.body?.approved;
+    if (typeof approved !== 'boolean') return response.status(400).json({ error: 'Status persetujuan tidak valid.' });
+
+    const memberResult = await pool.query(
+      `SELECT u.id FROM users u
+       WHERE u.id = $1
+         AND u.status = 'active'
+         AND EXISTS (
+           SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+           WHERE ur.user_id = u.id AND r.code = 'member'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM user_roles staff_role JOIN roles staff ON staff.id = staff_role.role_id
+           WHERE staff_role.user_id = u.id AND staff.code IN ('super_admin', 'admin', 'membership')
+         )`,
+      [request.params.id]
+    );
+    if (!memberResult.rowCount) return response.status(404).json({ error: 'Hanya anggota aktif yang dapat diberi akses data.' });
+
+    const ebookResult = await pool.query('SELECT id FROM ebooks WHERE id = $1 LIMIT 1', [ebookId]);
+    if (!ebookResult.rowCount) return response.status(404).json({ error: 'E-book tidak ditemukan.' });
+
+    if (approved) {
+      await pool.query(
+        `INSERT INTO user_ebook_access (user_id, ebook_id, granted_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, ebook_id) DO NOTHING`,
+        [request.params.id, ebookId, request.admin.id]
+      );
+    } else {
+      await pool.query(
+        'DELETE FROM user_ebook_access WHERE user_id = $1 AND ebook_id = $2',
+        [request.params.id, ebookId]
+      );
+    }
+    return response.json({ ebookId, approved });
   });
 }
