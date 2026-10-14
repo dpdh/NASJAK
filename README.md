@@ -13,6 +13,7 @@ NASUHA Jakarta / Sahabat Nasjak adalah portal web anggota untuk pendaftaran dan 
 - **Media / ruang baca**: koleksi e-book PDF yang dibaca langsung di dalam portal sebagai flipbook. Koleksi saat ini mencakup `e-L-01.pdf` dan `bcs2025.pdf`, serta cover Buku Putih NASUHA. Pembaca dapat berpindah halaman dengan tombol Sebelumnya/Berikutnya, menuju nomor halaman tertentu, menyimpan bookmark, melanjutkan halaman terakhir, menggunakan mode layar penuh, dan membaca pada desktop maupun perangkat mobile.
 - **Panel CMS/admin**: persetujuan dan pengelolaan anggota, role Super Admin/Admin/Membership, konten situs, data proyek, serta konfigurasi administrasi.
 - **Generator e-book CMS**: Super Admin dan Admin dapat mengunggah PDF maksimal 100 MB dari tab Content Management. Setelah upload berhasil, metadata e-book tersimpan di PostgreSQL dan file langsung tersedia di menu Media sebagai flipbook PDF.js + PageFlip.
+- **Akses konten per anggota**: di tabel keanggotaan CMS terdapat checklist per anggota untuk memberi/mencabut akses Buku Putih NASUHA dan setiap e-book di katalog CMS (tersimpan di tabel `user_ebook_access`). Anggota hanya melihat e-book yang aksesnya diberikan.
 - **Login sosial opsional**: Google, Facebook, Instagram, dan Apple melalui OAuth apabila kredensial provider telah dikonfigurasi.
 - **Keamanan dasar**: password disimpan dengan bcrypt, sesi memakai token hash dan cookie HttpOnly, validasi tipe/ukuran upload, rate limiting, CSP, Helmet, dan pembatasan akses berdasarkan role.
 
@@ -117,6 +118,54 @@ Buat kredensial OAuth pada [Google Cloud Console](https://console.cloud.google.c
 
 Pengguna harus masuk ke akun Sahabat Nasjak yang sudah ada dengan email/password terlebih dahulu, lalu menautkan provider dari bagian **Login dengan akun sosial** di profil. Setelah ditautkan, tombol provider dapat digunakan untuk login ke akun tersebut. Login sosial tidak membuat akun Sahabat Nasjak baru dan tidak mengaktifkan akun pending/suspended. Instagram Login resmi Meta hanya mendukung akun profesional Business/Creator. Simpan semua client secret dan private key hanya di `.env`, jangan commit atau membagikannya.
 
+## Struktur repository
+
+```
+.
+├── server.js              # Express server utama: autentikasi anggota, profil, Pilot Project,
+│                          #   KTA/sertifikat, upload foto, session, rate limiting
+├── admin.js (root)        # Modul backend admin: login admin, CRUD anggota, role,
+│                          #   site content, e-book, reset password Super Admin
+├── admin.html / admin.css / admin-ui.js   # UI panel CMS (dashboard, keanggotaan, content management)
+├── index.html             # Landing page (hero, informasi, CTA daftar/masuk)
+├── nasjak.css / nasjak.js # Gaya dan skrip landing page
+├── script.js / style.css  # Skrip & gaya halaman login/registrasi/portal
+├── member-portal.html     # Dashboard anggota: profil, KTA digital, sertifikat,
+│                          #   Pilot Project, Media (e-book flipbook)
+├── verify.html/css/js     # Halaman verifikasi publik KTA (/verify/:id)
+├── database.sql           # Skema PostgreSQL (users, roles, site_content, ebooks,
+│                          #   user_ebook_access, pilot project, social login, dll.)
+├── .env.example           # Template konfigurasi environment
+├── .htaccess              # Route rewrite untuk deploy shared hosting (/admin, /anggota)
+├── scripts/               # Script CLI reset password & token Super Admin
+├── assets/book/           # PDF e-book statis + cover (uploads CMS di book/uploads/)
+├── assets/img/            # Logo, avatar, template KTA, cover buku
+├── uploads/               # Upload runtime (foto anggota, lampiran) — tidak di-commit
+└── admin/ dan anggota/    # Alias route untuk deploy .htaccess
+```
+
+- `server.js` memanggil `registerAdminRoutes()` dari `admin.js` untuk memasang seluruh rute CMS.
+- `admin-ui.js` adalah skrip browser panel CMS (disajikan sebagai `/admin.js`).
+- `assets/book/uploads/` dibuat otomatis saat admin mengunggah e-book pertama.
+
+## Database
+
+Skema dibuat oleh `database.sql` (`npm run db:setup`). Tabel penting:
+
+| Tabel | Fungsi |
+| --- | --- |
+| `users` | Akun anggota: nama, email, password hash, instansi, profesi, avatar, nomor anggota, status (`pending`/`active`/`suspended`), flag `white_paper_access` dan `must_change_password` |
+| `roles`, `user_roles` | Role `super_admin`, `admin`, `membership`, `member` |
+| `site_content` | Teks halaman landing/login/pendaftaran yang bisa diedit via CMS |
+| `ebooks` | Katalog e-book (judul, deskripsi, file PDF, ukuran) |
+| `user_ebook_access` | Hak akses e-book per anggota (`user_id` + `ebook_id`) |
+| `pilot_project_*` | Grup, anggota grup, posting, media, like, komentar Pilot Project |
+| `member_sessions`, `admin_sessions` | Sesi login (token disimpan sebagai hash) |
+| `social_identities`, `user_sessions` | Tautan login sosial dan sesi anggota |
+| `admin_password_resets` | Token reset password Super Admin |
+
+Migrasi idempotent (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) sehingga `database.sql` aman dijalankan ulang pada database lama.
+
 ## Panel admin dan role
 
 Buka `http://localhost:3000/admin` dan masuk dengan akun aktif. Sesi menggunakan cookie `HttpOnly`, `SameSite=Strict`, dan token yang disimpan sebagai hash.
@@ -136,3 +185,77 @@ KTA menyertakan QR untuk membuka `/verify/<id>` pada `PUBLIC_BASE_URL`. Halaman 
 Konfirmasi setelah persetujuan menampilkan pintasan cetak KTA dan sertifikat. Sertifikat dicetak pada A4 lanskap dengan ruang tanda tangan kosong untuk ditandatangani langsung oleh Ketua Sahabat Nasjak sebelum dibagikan.
 
 Anggota hasil impor dengan `users.must_change_password = true` akan melihat dialog wajib ganti kata sandi saat login atau pemulihan sesi. Kata sandi baru minimal 12 karakter dan harus dikonfirmasi; setelah berhasil anggota langsung masuk ke profil. Rute perubahan kata sandi mempertahankan sesi saat ini dan mencabut sesi lainnya. Admin dapat mengatur flag kewajiban ini melalui kolom `users.must_change_password`; mengganti kata sandi lewat CMS tidak dengan sendirinya mengubah flag tersebut.
+
+## Endpoint API utama
+
+### Anggota (sesi cookie anggota)
+
+| Method | Endpoint | Fungsi |
+| --- | --- | --- |
+| POST | `/api/auth/register` | Pendaftaran anggota baru (status `pending`) |
+| POST | `/api/auth/login` | Login anggota |
+| GET | `/api/auth/me` | Profil anggota yang sedang masuk |
+| POST | `/api/auth/logout` | Logout |
+| PATCH | `/api/auth/profile` | Ubah nama, instansi, profesi, avatar |
+| POST | `/api/auth/profile/photo` | Unggah foto profil (JPEG/PNG/WebP, maks 5 MB) |
+| DELETE | `/api/auth/profile/photo` | Hapus foto profil |
+| POST | `/api/auth/change-password` | Ganti kata sandi (wajib saat `must_change_password`) |
+| GET | `/api/auth/white-paper` | Tautan Buku Putih (hanya bila akses diberikan) |
+| GET | `/api/auth/ebooks` | Daftar e-book yang boleh diakses anggota |
+| GET | `/api/auth/ebooks/:id/file` | Stream file PDF e-book |
+| GET | `/api/auth/pilot-project-groups` | Daftar grup Pilot Project |
+| GET/POST | `/api/auth/pilot-project-groups/:groupId/posts` | Baca/buat posting grup |
+| POST/DELETE | `.../posts/:postId/like` | Suka/batal suka posting |
+| POST | `.../posts/:postId/comments` | Komentar pada posting |
+| GET | `/api/health` | Health check server + database |
+
+### Admin (sesi cookie `idtc_admin_session`)
+
+| Method | Endpoint | Fungsi |
+| --- | --- | --- |
+| POST | `/api/admin/login` | Login admin |
+| GET | `/api/admin/me` | Profil/role admin aktif |
+| GET | `/api/admin/users` | Daftar anggota + katalog e-book + ringkasan status |
+| POST | `/api/admin/users` | Tambah anggota manual |
+| DELETE | `/api/admin/users/:id` | Hapus anggota |
+| PATCH | `/api/admin/users/:id/status` | Setujui/tangguhkan anggota |
+| PATCH | `/api/admin/users/:id/white-paper-access` | Cabut/berikan akses Buku Putih |
+| PATCH | `/api/admin/users/:id/ebook-access` | Cabut/berikan akses e-book tertentu |
+| GET | `/api/admin/users/:id/photo`, `/qr` | Foto & QR KTA anggota |
+| GET/POST | `/api/admin/ebooks` | Katalog & unggah e-book PDF (maks 100 MB) |
+| GET/PATCH | `/api/admin/content` | Baca/ubah teks situs (`site_content`) |
+| GET | `/api/admin/accounts` | Daftar akun staf (Super Admin) |
+| PATCH | `/api/admin/accounts/:id/role` | Ubah role akun (Super Admin) |
+| POST | `/api/admin/reset-password` | Reset password Super Admin via token |
+| GET | `/api/members/verify/:id` | Verifikasi publik KTA |
+
+### Halaman
+
+| Path | Halaman |
+| --- | --- |
+| `/` | Landing page |
+| `/admin` | Panel CMS |
+| `/verify/:id` | Verifikasi publik KTA |
+| `/anggota` | Portal anggota (alias via `.htaccess` pada deploy) |
+
+## Keamanan
+
+- Password disimpan sebagai hash bcrypt; token sesi disimpan sebagai hash di database dan dikirim lewat cookie `HttpOnly` + `SameSite=Strict` (sesi admin kedaluwarsa dalam 8 jam).
+- Rate limiting pada login anggota, login admin, registrasi, komentar/posting, greeting, dan reset password.
+- Header keamanan Helmet (CSP, HSTS, dll.) dan pemeriksaan same-origin untuk semua request mutasi.
+- Upload divalidasi berdasarkan isi file (`file-type`), bukan hanya ekstensi; ukuran dibatasi per jenis upload (foto 5 MB, lampiran Pilot Project 10 MB, e-book 100 MB).
+- Endpoint publik `/api/members/verify/:id` hanya mengembalikan data minimum (nama, nomor anggota, instansi, status, tanggal daftar) — tidak pernah email atau password.
+- Akses e-book/Buku Putih diverifikasi per anggota (`white_paper_access`, `user_ebook_access`) sebelum file disajikan.
+
+## Troubleshooting
+
+- **`fatal: refusing to merge unrelated histories`** — repository tujuan berisi riwayat commit yang tidak terhubung dengan riwayat lokal. Pilih salah satu: (1) `git pull --allow-unrelated-histories` untuk menggabungkan kedua riwayat, atau (2) `git push --force` bila yakin menimpa isi repository tujuan (riwayat lama di tujuan akan hilang).
+- **Server tidak bisa menyambung database** — pastikan PostgreSQL berjalan dan `DATABASE_URL` benar; cek `GET /api/health` untuk status koneksi.
+- **E-book tidak muncul di portal** — pastikan anggota berstatus `active` dan centang akses e-book di tabel keanggotaan CMS; file PDF harus berhasil diunggah lewat Content Management.
+- **`node_modules` atau `.env` ikut ter-commit** — keduanya sudah ada di `.gitignore`; jangan mematikan ignore tersebut.
+- **Push ditolak (`non-fast-forward`)** — lakukan `git pull` lalu selesaikan konflik; `git push --force` hanya bila yakin menimpa remote.
+
+## Repository Git
+
+- Remote produksi: `https://github.com/dpdh/NASJAK.git` (branch `main`)
+- Alur kerja: commit lokal di-push ke `main`; `--force` hanya dipakai bila yakin menimpa isi remote.
